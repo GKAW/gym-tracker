@@ -1,0 +1,11 @@
+{
+	"id": "workout-tracker",
+	"name": "Workout Tracker",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "A lightweight fitness tracker for Obsidian with automatic exercise history",
+	"author": "Georg Wachter",
+	"authorUrl": "https://github.com/gkaw",
+	"fundingUrl": "https://buymeacoffee.com/gkaw",
+	"isDesktopOnly": false
+}
