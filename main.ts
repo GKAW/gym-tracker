@@ -857,7 +857,7 @@ class TrackerSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 		
-		containerEl.createEl('h2', { text: 'Fitness Tracker Settings' });
+		containerEl.createEl('h2', { text: 'Workout Tracker Settings' });
 		
 		containerEl.createEl('p', { 
 			text: 'Your exercise history is automatically saved. Use the ribbon button or commands to add workouts to your notes.' 
