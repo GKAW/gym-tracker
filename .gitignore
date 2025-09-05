@@ -24,6 +24,7 @@ lib/
 
 # IDE
 .vscode/
+.claude/
 
 # OS generated files
 .DS_Store
