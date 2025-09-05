@@ -15,6 +15,7 @@ interface WorkoutTemplate {
 interface TrackerSettings {
 	exerciseHistory: Record<string, ExerciseEntry[]>;
 	workoutTemplates: WorkoutTemplate[];
+	dashboardPath: string;
 }
 
 const DEFAULT_SETTINGS: TrackerSettings = {
@@ -32,7 +33,8 @@ const DEFAULT_SETTINGS: TrackerSettings = {
 			name: "Pull Day",
 			exercises: ["Pull Ups", "Chin Ups", "Rows", "Deadlifts"]
 		}
-	]
+	],
+	dashboardPath: "_Workout Dashboard.md"
 }
 
 export default class TrackerPlugin extends Plugin {
@@ -153,11 +155,136 @@ export default class TrackerPlugin extends Plugin {
 			return false;
 		}
 		
-		// Check if it's near a workout table by looking for context
 		// Parse cells the same way as in handleEditorChange
 		const allCells = line.split('|').map(cell => cell.trim());
 		const cells = allCells.slice(1, -1);
-		return cells.length >= 6;
+		
+		// Must have exactly 6 columns for workout table
+		if (cells.length !== 6) {
+			return false;
+		}
+		
+		// Check if this is the header row
+		const expectedHeaders = ['Exercise', 'Reps', 'Weight', 'Last Reps', 'Last Weight', 'Last Date'];
+		const isHeaderRow = cells.every((cell, index) => 
+			cell.toLowerCase() === expectedHeaders[index].toLowerCase()
+		);
+		
+		if (isHeaderRow) {
+			return true;
+		}
+		
+		// If not header row, we need to check if we're in a workout table context
+		// This requires checking surrounding lines for the header
+		return this.isInWorkoutTableContext();
+	}
+	
+	isInWorkoutTableContext(): boolean {
+		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!activeView) {
+			return false;
+		}
+		
+		const editor = activeView.editor;
+		const cursor = editor.getCursor();
+		const currentLine = cursor.line;
+		
+		// First, find the boundaries of the current table
+		const tableStart = this.findTableStart(editor, currentLine);
+		const tableEnd = this.findTableEnd(editor, currentLine);
+		
+		// If we can't find table boundaries, we're not in a table
+		if (tableStart === -1 || tableEnd === -1) {
+			return false;
+		}
+		
+		// Now look for the workout table header within this specific table
+		for (let i = tableStart; i <= tableEnd; i++) {
+			const line = editor.getLine(i);
+			
+			if (line.includes('|')) {
+				const allCells = line.split('|').map(cell => cell.trim());
+				const cells = allCells.slice(1, -1);
+				
+				// Skip separator rows
+				if (cells.every(cell => cell.match(/^[\s\-]*$/))) {
+					continue;
+				}
+				
+				// Must have exactly 6 columns
+				if (cells.length === 6) {
+					const expectedHeaders = ['Exercise', 'Reps', 'Weight', 'Last Reps', 'Last Weight', 'Last Date'];
+					const isHeaderRow = cells.every((cell, index) => 
+						cell.toLowerCase() === expectedHeaders[index].toLowerCase()
+					);
+					
+					if (isHeaderRow) {
+						return true;
+					}
+				}
+			}
+		}
+		
+		return false;
+	}
+	
+	findTableStart(editor: Editor, currentLine: number): number {
+		// Search upward from current line to find the start of the table
+		let emptyLineCount = 0;
+		for (let i = currentLine; i >= 0; i--) {
+			const line = editor.getLine(i);
+			
+			// Count consecutive empty lines
+			if (line.trim() === '') {
+				emptyLineCount++;
+				// If we have more than 1 empty line, treat it as a table boundary
+				if (emptyLineCount > 1) {
+					return i + emptyLineCount + 1;
+				}
+				continue;
+			}
+			
+			// Reset empty line count when we hit content
+			emptyLineCount = 0;
+			
+			// If we hit a non-table line (not containing |), this is the boundary
+			if (!line.includes('|')) {
+				// Found non-table content, table starts at the next line
+				return i + 1;
+			}
+		}
+		// If we reached the beginning of the document, table starts at line 0
+		return 0;
+	}
+	
+	findTableEnd(editor: Editor, currentLine: number): number {
+		// Search downward from current line to find the end of the table
+		const totalLines = editor.lineCount();
+		let emptyLineCount = 0;
+		for (let i = currentLine; i < totalLines; i++) {
+			const line = editor.getLine(i);
+			
+			// Count consecutive empty lines
+			if (line.trim() === '') {
+				emptyLineCount++;
+				// If we have more than 1 empty line, treat it as a table boundary
+				if (emptyLineCount > 1) {
+					return i - emptyLineCount - 1;
+				}
+				continue;
+			}
+			
+			// Reset empty line count when we hit content
+			emptyLineCount = 0;
+			
+			// If we hit a non-table line (not containing |), this is the boundary
+			if (!line.includes('|')) {
+				// Found non-table content, table ends at the previous line
+				return i - 1;
+			}
+		}
+		// If we reached the end of the document, table ends at the last line
+		return totalLines - 1;
 	}
 
 	autoFillPreviousData(editor: Editor, lineNum: number, exerciseName: string) {
@@ -365,7 +492,7 @@ export default class TrackerPlugin extends Plugin {
 	}
 
 	async openOrUpdateDashboard() {
-		const dashboardPath = '_Workout Dashboard.md';
+		const dashboardPath = this.settings.dashboardPath;
 		const dashboardFile = this.app.vault.getAbstractFileByPath(dashboardPath);
 		
 		if (dashboardFile && dashboardFile instanceof TFile) {
@@ -857,31 +984,41 @@ class TrackerSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 		
-		containerEl.createEl('h2', { text: 'Workout Tracker Settings' });
+		containerEl.createEl('h2', { text: 'Gym Tracker Settings' });
 		
 		containerEl.createEl('p', { 
 			text: 'Your exercise history is automatically saved. Use the ribbon button or commands to add workouts to your notes.' 
 		});
 
-		// Exercise History Section
-		const historyDiv = containerEl.createDiv();
-		historyDiv.createEl('h3', { text: 'Exercise History' });
-		
-		const exerciseCount = Object.keys(this.plugin.settings.exerciseHistory).length;
-		historyDiv.createEl('p', { text: `Tracked exercises: ${exerciseCount}` });
+		// Add divider before Progress Dashboard
+		containerEl.createEl('hr');
 
-		if (exerciseCount > 0) {
-			const clearButton = historyDiv.createEl('button', { 
-				text: 'Clear All History',
-				cls: 'mod-warning'
-			});
-			clearButton.addEventListener('click', async () => {
-				this.plugin.settings.exerciseHistory = {};
-				await this.plugin.saveSettings();
-				new Notice('Exercise history cleared');
-				this.display();
-			});
-		}
+		// Progress Dashboard Section
+		const dashboardDiv = containerEl.createDiv();
+		dashboardDiv.createEl('h3', { text: 'Progress Dashboard' });
+		
+		new Setting(dashboardDiv)
+			.setName('Dashboard file path')
+			.setDesc('Path where the progress dashboard will be created')
+			.addText(text => text
+				.setPlaceholder('_Workout Dashboard.md')
+				.setValue(this.plugin.settings.dashboardPath)
+				.onChange(async (value) => {
+					this.plugin.settings.dashboardPath = value || '_Workout Dashboard.md';
+					await this.plugin.saveSettings();
+				}));
+
+		const initDashboardButton = dashboardDiv.createEl('button', { 
+			text: 'Initialize Dashboard',
+			cls: 'mod-cta'
+		});
+		initDashboardButton.addEventListener('click', async () => {
+			await this.plugin.openOrUpdateDashboard();
+			new Notice('Dashboard initialized');
+		});
+
+		// Add divider before Workout Templates
+		containerEl.createEl('hr');
 
 		// Workout Templates Section
 		const templatesDiv = containerEl.createDiv();
@@ -912,6 +1049,12 @@ class TrackerSettingTab extends PluginSettingTab {
 			});
 		}
 
+		// Add some space before the New Workout Template section
+		templatesDiv.createEl('br');
+		
+		// Add subheader for New Workout Template
+		templatesDiv.createEl('h3', { text: 'New Workout Template' });
+		
 		const addTemplateButton = templatesDiv.createEl('button', {
 			text: 'Add New Template',
 			cls: 'mod-cta'
@@ -919,5 +1062,59 @@ class TrackerSettingTab extends PluginSettingTab {
 		addTemplateButton.addEventListener('click', () => {
 			new TemplateEditModal(this.app, this.plugin, null, () => this.display()).open();
 		});
+
+		// Add divider before Exercise History
+		containerEl.createEl('hr');
+
+		// Exercise History Section (moved to bottom)
+		const historyDiv = containerEl.createDiv();
+		historyDiv.createEl('h3', { text: 'Exercise History' });
+		
+		const exerciseCount = Object.keys(this.plugin.settings.exerciseHistory).length;
+		historyDiv.createEl('p', { text: `Tracked exercises: ${exerciseCount}` });
+
+		if (exerciseCount > 0) {
+			historyDiv.createEl('p', { 
+				text: 'To clear all exercise history, type "CLEARALLHISTORY" below and click the button:',
+				cls: 'setting-item-description'
+			});
+			
+			const confirmationInput = historyDiv.createEl('input', {
+				type: 'text',
+				placeholder: 'Type CLEARALLHISTORY to confirm'
+			});
+			
+			const clearButton = historyDiv.createEl('button', { 
+				text: 'Clear All History',
+				cls: 'mod-warning'
+			});
+			
+			// Add margin to create space between input and button
+			clearButton.style.marginLeft = '10px';
+			
+			// Initially disable the button
+			clearButton.disabled = true;
+			clearButton.style.opacity = '0.5';
+			
+			// Enable button only when correct text is entered
+			confirmationInput.addEventListener('input', () => {
+				if (confirmationInput.value === 'CLEARALLHISTORY') {
+					clearButton.disabled = false;
+					clearButton.style.opacity = '1';
+				} else {
+					clearButton.disabled = true;
+					clearButton.style.opacity = '0.5';
+				}
+			});
+			
+			clearButton.addEventListener('click', async () => {
+				if (confirmationInput.value === 'CLEARALLHISTORY') {
+					this.plugin.settings.exerciseHistory = {};
+					await this.plugin.saveSettings();
+					new Notice('Exercise history cleared');
+					this.display();
+				}
+			});
+		}
 	}
 }

@@ -1,9 +1,9 @@
 {
-	"id": "workout-tracker",
-	"name": "Workout Tracker",
+	"id": "gym-tracker",
+	"name": "Gym Tracker",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "A lightweight fitness tracker with automatic exercise history for progressive overload.",
+	"description": "A lightweight gym tracker with automatic exercise history for progressive overload.",
 	"author": "Georg Wachter",
 	"authorUrl": "https://github.com/gkaw",
 	"fundingUrl": "https://buymeacoffee.com/gkaw",
